@@ -6,7 +6,7 @@ export async function render(el, ctx) {
   function draw() {
     const c = cams.find((x) => x.machine_id === sel);
     let roi = JSON.parse(c.roi);
-    el.innerHTML = `<div class="page-head"><div><h1>Konfigurasi kamera & area deteksi</h1><p>Kamera mendeteksi <b>keberadaan orang</b> di area kerja (ROI) mesin — tanpa pengenalan wajah. Identitas berasal dari RFID. Kamera tidak pernah menghentikan mesin.</p></div></div>
+    el.innerHTML = `<div class="page-head"><div><h1>Konfigurasi kamera & area deteksi</h1><p>Kamera mendeteksi <b>keberadaan orang</b> di area kerja (ROI) mesin — tanpa pengenalan wajah. Identitas berasal dari RFID. Kamera tidak pernah menghentikan mesin.</p></div><a class="btn btn-primary" href="/kamera-demo.html?m=${encodeURIComponent(c.machine_id)}" target="_blank" rel="noopener">📷 Coba deteksi orang (demo) ↗</a></div>
       <div class="grid cam-grid">
         <section class="panel"><header><h3>Kamera</h3></header><div class="tbl-wrap" style="max-height:640px"><table class="tbl"><tbody>${cams.map((x) => `<tr style="cursor:pointer;${x.machine_id === sel ? 'background:#e7effc' : ''}" data-sel="${x.machine_id}"><td><b>${x.machine_id}</b></td><td>${badge(STATUS.device[x.device_status] || 'muted', { ok: 'Normal', offline: 'Terputus', degraded: 'Tidak andal', obstructed: 'Tertutup', unknown: '?' }[x.device_status] || x.device_status)}</td><td class="small">${x.absence_threshold_s != null ? x.absence_threshold_s + ' d' : 'global'}</td></tr>`).join('')}</tbody></table></div></section>
         <section class="panel"><header><h3>${esc(c.machine_id)} — ${esc(c.machine_name)}</h3><span class="small muted">Status: kamera ${esc(c.camera_state)}, deteksi ${esc(c.presence_raw)}, kualitas ${c.last_quality ?? '—'}</span></header><div class="body">

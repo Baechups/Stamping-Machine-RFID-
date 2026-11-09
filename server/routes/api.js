@@ -122,8 +122,18 @@ module.exports = function api(core, sim) {
       canEnter = !!settings.operator_can_enter_results && !!op?.can_enter_results;
     }
     const lastSummary = !s ? db.get("SELECT s.summary, s.logout_at, o.name FROM sessions s JOIN operators o ON o.id = s.operator_id WHERE s.machine_id = ? AND s.status IN ('CLOSED','FORCE_CLOSED') ORDER BY s.logout_at DESC LIMIT 1", m) : null;
+    const camCfg = db.get('SELECT roi, enabled FROM camera_config WHERE machine_id = ?', m);
+    const camP = core.presence.params(m);
     return {
       card, jobs, can_enter_results: canEnter,
+      // Parameter deteksi efektif (konfigurasi kamera atau pengaturan global) untuk analitik kamera / demo
+      camera: {
+        roi: camCfg ? JSON.parse(camCfg.roi) : null, enabled: !!camCfg?.enabled,
+        absence_threshold_s: camP.threshold / 1000, return_confirm_s: camP.confirm / 1000,
+        min_confidence: camP.minConfidence, min_quality: camP.minQuality, min_roi_overlap: camP.minRoi,
+      },
+      presence_events: s ? db.all(`SELECT id, kind, start_at, end_at, duration_ms, classification, corrected_classification, cause
+        FROM presence_events WHERE session_id = ? ORDER BY start_at DESC LIMIT 8`, s.id) : [],
       work_orders: db.all("SELECT w.id, w.product_id, p.name AS product_name, ps.name AS stage_name FROM work_orders w JOIN products p ON p.id = w.product_id LEFT JOIN process_stages ps ON ps.id = w.stage_id WHERE w.status = 'open' ORDER BY w.id"),
       last_summary: lastSummary && lastSummary.logout_at > core.clock.now() - 120000 ? { ...JSON.parse(lastSummary.summary || '{}'), operator_name: lastSummary.name, logout_at: lastSummary.logout_at } : null,
       monitoring_notice: settings.monitoring_notice, simulation: core.simulation, sim: sim ? sim.stateOf(m) : null, now: core.clock.now(),

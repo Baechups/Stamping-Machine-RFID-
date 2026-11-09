@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.js",
     "reset-db": "node --disable-warning=ExperimentalWarning server/seed.js --reset",
+    "unduh-model": "node scripts/unduh-model.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
   },
   "dependencies": {

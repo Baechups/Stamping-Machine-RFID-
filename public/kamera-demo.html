@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo Deteksi Orang</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { background: var(--bg); }
+    .cd-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    .cd-top h1 { font-size: 19px; }
+    .cd-top .spacer { flex: 1; }
+    .cd-main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: 14px; padding: 16px 20px 30px; align-items: start; }
+    .stage { position: relative; background: #111a27; border-radius: 10px; overflow: hidden; min-height: 240px; display: grid; place-items: center; }
+    .stage canvas { display: block; width: 100%; height: auto; }
+    .stage .placeholder { color: #c9d4e3; text-align: center; padding: 50px 20px; line-height: 1.6; }
+    .cd-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+    .big-status { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 10px; border: 2px solid var(--line); font-weight: 700; font-size: 17px; line-height: 1.3; }
+    .big-status .ico { font-size: 30px; line-height: 1; }
+    .big-status small { display: block; font-weight: 500; font-size: 13px; margin-top: 3px; }
+    .st-present { background: var(--ok-bg); border-color: #8fd3a6; color: #0e5c2b; }
+    .st-empty { background: var(--bad-bg); border-color: #f2a59c; color: #7a1a11; }
+    .st-outside { background: var(--warn-bg); border-color: #f0c674; color: #6b3d00; }
+    .st-unreliable, .st-uncertain { background: var(--muted-bg); border-color: #c5cdd8; color: #3c4655; }
+    .st-idle { background: #f7f9fb; color: var(--ink-2); }
+    .meter { height: 10px; background: var(--line-2); border-radius: 6px; overflow: hidden; margin-top: 6px; }
+    .meter > div { height: 100%; background: var(--warn); transition: width .4s; }
+    .persons { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; }
+    .persons li { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+    .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+    .steps { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+    @media (max-width: 900px) { .cd-main { grid-template-columns: 1fr; padding: 12px; } .cd-top { padding: 10px 12px; } }
+  </style>
+</head>
+<body>
+  <header class="cd-top">
+    <div><h1>📷 Demo deteksi orang</h1><div class="small muted">Analitik kamera nyata di browser · tanpa pengenalan wajah</div></div>
+    <span id="modeBadge"></span>
+    <div class="spacer"></div>
+    <label class="small" for="machineSel">Mesin</label>
+    <select id="machineSel" aria-label="Pilih mesin"></select>
+    <a class="btn btn-sm" id="termLink" href="/terminal.html" target="_blank" rel="noopener">Terminal mesin ↗</a>
+    <a class="btn btn-sm" href="/#/kamera">Ubah area deteksi</a>
+  </header>
+  <main class="cd-main">
+    <section>
+      <div class="stage" id="stage"><div class="placeholder" id="placeholder">Memuat model deteksi…</div><canvas id="view" hidden aria-label="Gambar kamera dengan hasil deteksi"></canvas></div>
+      <div class="cd-controls">
+        <button class="btn btn-primary" id="camBtn" disabled>📷 Gunakan webcam</button>
+        <label class="btn" id="fileLbl" aria-disabled="true">📁 Pilih video atau foto<input type="file" id="fileIn" accept="video/*,image/*" hidden disabled></label>
+        <button class="btn" id="stopBtn" disabled>■ Berhenti</button>
+        <span class="small muted" id="modelInfo">Memuat…</span>
+      </div>
+      <div class="legend" style="margin-top:8px">
+        <span><i style="background:rgba(56,132,255,.35);border:2px solid #3884ff"></i>Area kerja mesin (ROI)</span>
+        <span><i style="background:#22a559"></i>Orang di area kerja — dihitung hadir</span>
+        <span><i style="background:#f59e0b"></i>Orang di luar area — tidak dihitung</span>
+        <span><i style="background:#94a3b8"></i>Deteksi kurang yakin</span>
+      </div>
+      <div class="notice" style="margin-top:12px">🔒 <b>Privasi:</b> video diproses di browser ini saja; gambar tidak dikirim dan tidak disimpan. Ke server hanya dikirim status <i>ada/tidak ada orang</i>, tingkat keyakinan, kualitas gambar, dan proporsi tubuh di dalam area kerja. Model hanya mengenali objek "orang", bukan wajah; identitas operator tetap berasal dari kartu RFID. Kamera hanya untuk pemantauan dan tidak pernah menghentikan mesin.</div>
+    </section>
+    <aside class="stack">
+      <section class="panel"><header><h3>1 · Hasil kamera (perangkat lokal)</h3></header><div class="body">
+        <div class="big-status st-idle" id="localStatus" role="status" aria-live="polite"><span class="ico">⏸</span><span>Belum berjalan<small>Pilih webcam atau file video/foto.</small></span></div>
+        <ul class="persons" id="persons"></ul>
+        <div class="small muted" id="sendInfo" style="margin-top:8px"></div>
+      </div></section>
+      <section class="panel"><header><h3>2 · Pencatatan sistem (server)</h3><span class="small muted" id="srvTime"></span></header><div class="body" id="server">Memuat…</div></section>
+      <section class="panel"><header><h3>Cara kerja</h3></header><div class="body">
+        <ol class="steps">
+          <li>Model COCO-SSD mendeteksi objek <b>orang</b> pada setiap gambar (±2 kali per detik).</li>
+          <li>Hanya orang yang tubuhnya cukup berada di <b>area kerja (ROI)</b> mesin yang dihitung; orang lewat di luar area diabaikan.</li>
+          <li>Status berubah hanya jika hasilnya sama pada 2 analisis berturut-turut, agar tidak mudah berganti-ganti.</li>
+          <li>Server mencatat <b>ketidakhadiran</b> hanya jika tidak ada orang selama ≥ ambang (default 30 dtk), dan menutupnya setelah orang terkonfirmasi kembali.</li>
+          <li>Gambar gelap, tertutup, atau deteksi yang kurang yakin dicatat sebagai <b>pemantauan tidak tersedia</b>, bukan ketidakhadiran.</li>
+        </ol>
+      </div></section>
+    </aside>
+  </main>
+  <script type="module" src="/js/kamera-demo.js"></script>
+</body>
+</html>

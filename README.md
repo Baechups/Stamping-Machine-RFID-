@@ -50,6 +50,7 @@ Perintah lain:
 ```bash
 npm test          # 20 skenario verifikasi otomatis
 npm run reset-db  # hapus & buat ulang data contoh
+npm run unduh-model  # simpan model deteksi orang (±18 MB) di server agar demo kamera berjalan tanpa internet
 SIM_MODE=0 npm start   # mode produksi (Linux/macOS): tanpa perangkat virtual, API terminal/edge memerlukan kunci perangkat
 ```
 
@@ -60,6 +61,20 @@ Variabel lingkungan: `PORT` (3000), `DB_PATH` (`data/stamping.db`), `SIM_MODE` (
 2. Klik kartu mesin → **Detail mesin**: timeline, stamping per jam, pekerjaan & hasil, kejadian keberadaan, tindakan supervisor, dan **Panel simulasi** (tap kartu, kamera putus, orang lewat di luar ROI, sinyal memantul/tertahan, reset counter, jaringan putus & sinkronisasi, PLC gagal/timeout/stop tidak aman, listrik padam/pulih, E-stop).
 3. Buka terminal mesin di tab lain untuk melihat tampilan operator.
 4. **Laporan produksi & penyimpangan** → ekspor Excel/PDF.
+
+### Demo deteksi orang (kamera nyata)
+
+Halaman <http://localhost:3000/kamera-demo.html?m=M01> (menu **Demo deteksi orang**) menjalankan deteksi orang sungguhan di browser memakai TensorFlow.js + model COCO-SSD:
+
+1. Klik **Gunakan webcam** lalu izinkan akses kamera, atau **Pilih video atau foto** (mis. rekaman CCTV area kerja).
+2. Kotak **hijau** = orang di area kerja mesin (dihitung hadir), **oranye** = orang di luar area (hanya lewat, tidak dihitung), **abu-abu** = deteksi kurang yakin. Area kerja (ROI) diatur di halaman **Kamera & area deteksi**.
+3. Panel kanan menunjukkan pencatatan server secara langsung. Ketidakhadiran baru dicatat setelah tidak ada orang ≥ 30 detik, lalu ditutup setelah orang terkonfirmasi kembali 5 detik. Gambar gelap/tertutup dicatat sebagai "pemantauan tidak tersedia", bukan ketidakhadiran.
+
+Catatan:
+* Model hanya mengenali objek "orang" (tanpa pengenalan wajah). Video diproses di browser dan tidak dikirim/disimpan; yang dikirim hanya status, keyakinan, kualitas gambar, dan proporsi di area kerja.
+* Dalam mode simulasi, hasil dikirim ke mesin terpilih sebagai data simulasi (menggantikan keberadaan acak untuk mesin itu). Dalam mode produksi hasil hanya ditampilkan.
+* Webcam hanya dapat dipakai lewat `http://localhost` atau `https://` (aturan keamanan browser). Dari komputer lain di LAN, gunakan file video/foto atau pasang HTTPS.
+* Model (±18 MB) dimuat dari internet saat pertama dipakai; jalankan `npm run unduh-model` agar tersedia secara lokal.
 
 ## Fitur & halaman
 
@@ -83,7 +98,8 @@ Ringkasan aturan yang diterapkan:
 | Server, database, seluruh logika sesi/izin/keberadaan/stamping/produksi/laporan, hak akses, audit, ekspor | **Berfungsi** dan diuji otomatis (`npm test`) serta lewat antarmuka |
 | Antarmuka 14 halaman + terminal operator (desktop & ponsel/tablet) | **Berfungsi** |
 | Protokol perangkat lokal (`/api/edge/events`, `/api/edge/commands`, kunci perangkat) | **Berfungsi**; diuji dengan agen referensi terhadap server mode produksi (heartbeat, autentikasi) |
-| RFID reader, kamera + analitik deteksi orang, sensor siklus, PLC | **Disimulasikan** (`server/sim/simulator.js`) melalui jalur ingest yang sama dengan perangkat fisik. Data simulasi diberi tanda `simulated=1` dan lencana "Simulasi" |
+| Analitik deteksi orang (halaman Demo deteksi orang) | **Berfungsi dengan model nyata** (COCO-SSD di browser); diuji dengan rekaman CCTV contoh dan webcam virtual. Akurasi di lokasi (sudut kamera, pencahayaan, ROI) belum diuji; untuk produksi analitik dijalankan di perangkat lokal tiap mesin |
+| RFID reader, kamera fisik, sensor siklus, PLC | **Disimulasikan** (`server/sim/simulator.js`) melalui jalur ingest yang sama dengan perangkat fisik. Data simulasi diberi tanda `simulated=1` dan lencana "Simulasi" |
 | Agen perangkat lokal (`edge/edge-agent.js`) | **Referensi**: antrean offline, sinkronisasi, heartbeat, polling perintah berfungsi; **adapter RFID/kamera/PLC masih STUB** dan perlu diimplementasikan |
 | Integrasi PLC & keselamatan mesin | **Belum diverifikasi** — memerlukan peninjauan & uji teknisi pada mesin nyata |
 

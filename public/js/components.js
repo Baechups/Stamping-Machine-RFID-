@@ -17,7 +17,8 @@ export async function simPanel(container, machineId, onDone) {
       <div class="grp"><b>Kamera (deteksi keberadaan tanpa pengenalan wajah)</b><div class="row">
         ${b('presence', '👤 Orang di area kerja', { present: true })}${b('presence', '∅ Tidak ada orang', { present: false })}${b('presence', '🚶 Orang lewat di luar ROI', { present: true, outside_roi: true })}
         ${b('camera', 'Kamera terputus', { status: 'offline' })}${b('camera', 'Kamera tertutup', { status: 'obstructed' })}${b('quality', 'Kualitas buruk', { quality: 0.2 })}${b('camera', 'Kamera normal', { status: 'ok' })}
-        ${b('auto_presence', st.auto_presence ? 'Keberadaan acak: ON' : 'Keberadaan acak: OFF', { on: !st.auto_presence })}</div></div>
+        ${b('auto_presence', st.auto_presence ? 'Keberadaan acak: ON' : 'Keberadaan acak: OFF', { on: !st.auto_presence })}
+        <a class="btn btn-sm btn-sim" href="/kamera-demo.html?m=${encodeURIComponent(machineId)}" target="_blank" rel="noopener">📷 Demo kamera nyata ↗</a></div></div>
       <div class="grp"><b>Mesin / PLC (Start tetap tombol fisik; Stop & E-stop tanpa kartu)</b><div class="row">
         ${b('start', '▶ Tombol Start')}${b('stop', '■ Tombol Stop')}${b('estop', '⛔ Emergency stop', {}, 'btn-danger')}${b('estop_reset', 'Reset E-stop')}
         ${b('power', 'Listrik padam', { on: false })}${b('power', 'Listrik pulih', { on: true })}</div></div>
@@ -58,8 +59,8 @@ export function timelineHtml(tl) {
   const minutes = new Map();
   for (const s of tl.stamps) { const m = minutes.get(s.minute) || { n: 0, cat: s.category }; m.n += s.n; if (s.category !== 'normal') m.cat = s.category; minutes.set(s.minute, m); }
   const maxN = Math.max(1, ...[...minutes.values()].map((x) => x.n));
-  const bw = Math.max(0.12, 60000 / span * 100);
-  const bars = [...minutes.entries()].map(([t, m]) => `<div class="bar c-${m.cat}" style="left:${pct(t)}%;width:${bw}%;height:${(m.n / maxN) * 100}%" title="${fmtHM(t)}: ${m.n} siklus (${esc(CATEGORY[m.cat] || m.cat)})"></div>`).join('');
+  // Setiap batang mewakili satu menit, dipotong ke rentang sesi agar tidak melebar keluar timeline
+  const bars = [...minutes.entries()].map(([t, m]) => `<div class="bar c-${m.cat}" style="left:${pct(t)}%;width:${Math.max(0.12, pct(t + 60000) - pct(t))}%;height:${(m.n / maxN) * 100}%" title="${fmtHM(t)}: ${m.n} siklus (${esc(CATEGORY[m.cat] || m.cat)})"></div>`).join('');
   const ticks = [];
   const step = span > 6 * 3600e3 ? 3600e3 : span > 2 * 3600e3 ? 1800e3 : span > 40 * 60e3 ? 600e3 : 300e3;
   for (let t = Math.ceil(tl.start / step) * step; t < tl.end; t += step) ticks.push(`<span style="left:${pct(t)}%">${fmtHM(t)}</span>`);

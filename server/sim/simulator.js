@@ -102,6 +102,19 @@ function createSimulator(core) {
       return { ok: true };
     },
     quality(st, { quality }) { st.quality = Number(quality); observe(st); return { ok: true }; },
+    /**
+     * Hasil analitik kamera NYATA dari halaman Demo Deteksi Orang (model COCO-SSD di browser).
+     * Menggantikan keberadaan acak untuk mesin ini; tetap ditandai sebagai data simulasi.
+     */
+    camera_frame(st, { present, confidence, quality, roi_overlap }) {
+      const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.min(1, Math.max(0, Number(v))));
+      st.auto_presence = false;
+      if (st.camera !== 'ok') { st.camera = 'ok'; emit(st, 'camera_status', { status: 'ok', detail: 'Normal (demo kamera)' }); }
+      st.present = !!present;
+      const q = num(quality);
+      if (q != null) st.quality = q;
+      return emit(st, 'presence', { present: !!present, confidence: num(confidence), quality: q, roi_overlap: num(roi_overlap), source: 'demo-kamera' });
+    },
     start(st) {
       if (st.power !== 'on') return { ok: false, error: 'Daya padam' };
       if (st.physical === 'ESTOP') return { ok: false, error: 'E-stop aktif — reset terlebih dahulu' };

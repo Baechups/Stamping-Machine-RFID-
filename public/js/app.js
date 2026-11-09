@@ -6,6 +6,7 @@ const PAGES = [
   { path: 'mesin', label: 'Detail mesin & sesi', ico: '⚙', mod: 'machine', hidden: false },
   { path: 'perangkat', label: 'Status perangkat & gangguan', ico: '⚠', mod: 'devices' },
   { path: 'terminal', label: 'Terminal operator', ico: '🖥', href: '/terminal.html?m=M01', external: true },
+  { path: 'demo-kamera', label: 'Demo deteksi orang', ico: '📷', href: '/kamera-demo.html?m=M01', external: true },
   { grp: 'Laporan' },
   { path: 'riwayat', label: 'Riwayat sesi & ketidakhadiran', ico: '🕘', mod: 'history' },
   { path: 'laporan', label: 'Laporan produksi & penyimpangan', ico: '📊', mod: 'reports' },
