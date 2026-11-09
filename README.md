@@ -6,9 +6,17 @@ Aplikasi web berbahasa Indonesia untuk memantau siapa yang bekerja di setiap mes
 >
 > **Keselamatan.** Tap RFID hanya memberi *izin operasional*; mesin tetap dijalankan dengan tombol Start sesuai prosedur. Stop & emergency stop selalu berfungsi tanpa kartu. Kamera bukan perangkat keselamatan dan tidak pernah menghentikan mesin. Sistem tidak menggantikan interlock/pelindung. **Integrasi perangkat fisik dan aspek keselamatan belum diverifikasi** — wajib diuji teknisi mesin (lihat [docs/INTEGRASI-PERANGKAT.md](docs/INTEGRASI-PERANGKAT.md)).
 
+## Cara kerja (berbasis web)
+
+Aplikasi ini **berbasis web**. Satu komputer/server di jaringan pabrik menjalankan server Node.js beserta databasenya. Pengguna lain cukup membuka browser, tanpa memasang aplikasi apa pun:
+
+* PC supervisor/admin, laptop, atau tablet: `http://<alamat-server>:3000`
+* Layar terminal di setiap mesin: `http://<alamat-server>:3000/terminal.html?m=M01` (ganti nomor mesin)
+* Perangkat lokal tiap mesin (RFID, kamera, PLC) mengirim data ke server yang sama melalui jaringan.
+
 ## Menjalankan
 
-Kebutuhan: **Node.js ≥ 22.5** (memakai SQLite bawaan `node:sqlite`, tanpa kompilasi native).
+Kebutuhan: **Node.js 22.13 atau lebih baru**. Disarankan versi LTS terbaru dari <https://nodejs.org>. Aplikasi memakai SQLite bawaan `node:sqlite`, jadi tidak perlu memasang database atau mengompilasi modul native. Sudah diuji di Node 22.23 dan 26.13.
 
 ```bash
 npm install
@@ -18,7 +26,16 @@ npm install
 npm start
 ```
 
-Buka <http://localhost:3000>. Mode simulasi aktif secara default (perangkat virtual, ditandai jelas di UI). Database dan data contoh dibuat otomatis di `data/stamping.db`.
+Buka <http://localhost:3000>. Mode simulasi aktif secara default (perangkat virtual, ditandai jelas di UI). Database dan data contoh dibuat otomatis di `data/stamping.db`. Server menerima koneksi dari jaringan, jadi komputer lain di LAN yang sama dapat membuka `http://<IP-komputer-ini>:3000` (izinkan Node.js di Windows Firewall bila diminta).
+
+### Di Windows
+
+1. Pasang Node.js LTS dari <https://nodejs.org> (pilihan bawaan installer sudah cukup).
+2. Unduh kode: di halaman GitHub repo klik **Code → Download ZIP**, lalu ekstrak. Alternatifnya, `git clone` bila Git for Windows terpasang.
+3. Buka folder hasil ekstrak, klik kanan → **Open in Terminal** (PowerShell), lalu jalankan `npm install` dan `npm start`.
+4. Buka <http://localhost:3000> di Chrome/Edge. Hentikan server dengan `Ctrl+C`.
+
+Mode produksi di PowerShell: `$env:SIM_MODE="0"; npm start`.
 
 | Akun contoh | Kata sandi | Peran |
 |---|---|---|
@@ -33,7 +50,7 @@ Perintah lain:
 ```bash
 npm test          # 20 skenario verifikasi otomatis
 npm run reset-db  # hapus & buat ulang data contoh
-SIM_MODE=0 npm start   # mode produksi: tanpa perangkat virtual, API terminal/edge memerlukan kunci perangkat
+SIM_MODE=0 npm start   # mode produksi (Linux/macOS): tanpa perangkat virtual, API terminal/edge memerlukan kunci perangkat
 ```
 
 Variabel lingkungan: `PORT` (3000), `DB_PATH` (`data/stamping.db`), `SIM_MODE` (1).
