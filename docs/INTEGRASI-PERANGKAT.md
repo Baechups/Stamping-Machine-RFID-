@@ -8,7 +8,7 @@
 |---|---|---|
 | Perangkat lokal (IPC / mini-PC industri) | Linux, 2 GB RAM, penyimpanan SSD, UPS kecil, NTP | Menjalankan agen (referensi `edge/edge-agent.js`) dan analitik kamera |
 | RFID reader | 13,56 MHz (MIFARE) atau 125 kHz, keluaran UID (USB HID/serial/TCP) | UID dikirim sebagai heksadesimal huruf besar |
-| Kamera | Kamera IP 1080p, sudut ke area kerja operator | Deteksi orang (bukan wajah) di perangkat lokal; tidak menyimpan video secara default. Logika referensi (deteksi COCO-SSD kelas "person", proporsi kotak di dalam ROI dengan sampel grid, metrik kualitas gambar, ambang keyakinan, status stabil 2 analisis, kirim ulang tiap 10 dtk) ada di `public/js/kamera-demo.js` |
+| Kamera | Kamera IP 1080p, sudut ke area kerja operator | Deteksi orang (bukan wajah) di perangkat lokal; tidak menyimpan video secara default. Logika referensi (deteksi COCO-SSD kelas "person", proporsi kotak di dalam ROI dengan sampel grid, metrik kualitas gambar di kotak area kerja (kecerahan, kontras, ketajaman tepi), ambang keyakinan tanpa pembulatan, status stabil 2 analisis, kirim ulang tiap 10 dtk) ada di `public/js/kamera-demo.js` |
 | Terminal | Layar ≥ 10" dengan browser | Buka `/terminal.html?m=Mxx&key=<kunci terminal>` |
 | PLC / pengendali | Modbus TCP, OPC UA, atau I/O digital | Lihat daftar sinyal di bawah |
 

@@ -100,11 +100,20 @@ module.exports = function api(core, sim) {
   }));
 
   // ---------- Terminal operator ----------
+  /**
+   * Akses terminal: mode simulasi terbuka (demo). Mode produksi: kunci terminal milik mesin itu,
+   * atau pengguna login yang mesin tersebut berada dalam kewenangannya (supervisor per area).
+   */
   function terminalAuth(req, m) {
-    if (core.simulation || req.user) return;
+    if (core.simulation) return;
     const key = req.query.key || req.headers['x-terminal-key'];
-    const dev = db.get("SELECT * FROM devices WHERE type = 'terminal' AND machine_id = ? AND api_key = ?", m, key || '');
-    if (!dev) throw err(401, 'Terminal tidak terotorisasi');
+    if (key) {
+      const dev = db.get("SELECT 1 FROM devices WHERE type = 'terminal' AND machine_id = ? AND api_key = ?", m, String(key));
+      if (dev) return;
+      throw err(401, 'Terminal tidak terotorisasi');
+    }
+    if (req.user) { assertMachine(req, m); return; }
+    throw err(401, 'Terminal tidak terotorisasi');
   }
   r.get('/terminal/:m', wrap((req) => {
     const m = req.params.m;

@@ -104,16 +104,32 @@ function createSimulator(core) {
     quality(st, { quality }) { st.quality = Number(quality); observe(st); return { ok: true }; },
     /**
      * Hasil analitik kamera NYATA dari halaman Demo Deteksi Orang (model COCO-SSD di browser).
-     * Menggantikan keberadaan acak untuk mesin ini; tetap ditandai sebagai data simulasi.
+     * Selama demo, keberadaan acak mesin ini dinonaktifkan; data tetap ditandai simulasi.
+     * Keadaan kamera simulasi sebelum demo disimpan agar dapat dipulihkan utuh (camera_demo_end).
      */
     camera_frame(st, { present, confidence, quality, roi_overlap }) {
       const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.min(1, Math.max(0, Number(v))));
+      if (!st.demo) st.demo = { present: st.present, outside_roi: st.outside_roi, quality: st.quality, camera: st.camera, auto_presence: st.auto_presence };
       st.auto_presence = false;
       if (st.camera !== 'ok') { st.camera = 'ok'; emit(st, 'camera_status', { status: 'ok', detail: 'Normal (demo kamera)' }); }
-      st.present = !!present;
-      const q = num(quality);
-      if (q != null) st.quality = q;
-      return emit(st, 'presence', { present: !!present, confidence: num(confidence), quality: q, roi_overlap: num(roi_overlap), source: 'demo-kamera' });
+      const ov = num(roi_overlap);
+      st.present = !!present && (ov == null || ov >= core.presence.params(st.machine_id).minRoi);
+      return emit(st, 'presence', { present: !!present, confidence: num(confidence), quality: num(quality), roi_overlap: ov, source: 'demo-kamera' });
+    },
+    /** Demo kamera berhenti: kembalikan keadaan kamera simulasi seperti sebelum demo dan kirim observasinya. */
+    camera_demo_end(st) {
+      const prev = st.demo;
+      if (!prev) return { ok: true, restored: false };
+      st.demo = null;
+      Object.assign(st, { present: prev.present, outside_roi: prev.outside_roi, quality: prev.quality, auto_presence: prev.auto_presence });
+      if (prev.camera !== 'ok') {
+        st.camera = prev.camera;
+        emit(st, 'camera_status', { status: prev.camera, detail: 'Kembali ke kondisi simulasi sebelum demo' });
+      } else {
+        st.camera = 'ok';
+        observe(st);
+      }
+      return { ok: true, restored: true };
     },
     start(st) {
       if (st.power !== 'on') return { ok: false, error: 'Daya padam' };

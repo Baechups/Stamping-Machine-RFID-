@@ -130,7 +130,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); outlin
 .seg.present { background: #4fb878; } .seg.absent { background: repeating-linear-gradient(45deg, #d9443a 0 5px, #e8695f 5px 10px); }
 .seg.break { background: #7aa5e6; } .seg.leave { background: #a78bfa; } .seg.unknown { background: repeating-linear-gradient(-45deg, #9aa5b4 0 4px, #c3cad4 4px 8px); }
 .tl-stamps { position: relative; height: 46px; border-bottom: 1px solid var(--line); overflow: hidden; }
-.tl-stamps .bar + .bar { box-shadow: inset 1px 0 0 #fff; }
 .tl-stamps .bar { position: absolute; bottom: 0; background: #2f6fde; min-width: 1px; }
 .tl-stamps .bar.c-setup, .tl-stamps .bar.c-trial { background: #f59e0b; } .tl-stamps .bar.c-rework { background: #a855f7; } .tl-stamps .bar.c-unassigned { background: #94a3b8; }
 .tl-axis { position: relative; height: 18px; font-size: 10.5px; color: var(--ink-3); }

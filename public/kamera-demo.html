@@ -29,6 +29,9 @@
     .persons li { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
     .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
     .steps { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+    .cd-main > * { min-width: 0; }
+    .cd-top .badge { white-space: normal; }
+    .tbl-scroll { overflow-x: auto; }
     @media (max-width: 900px) { .cd-main { grid-template-columns: 1fr; padding: 12px; } .cd-top { padding: 10px 12px; } }
   </style>
 </head>
@@ -47,7 +50,8 @@
       <div class="stage" id="stage"><div class="placeholder" id="placeholder">Memuat model deteksi…</div><canvas id="view" hidden aria-label="Gambar kamera dengan hasil deteksi"></canvas></div>
       <div class="cd-controls">
         <button class="btn btn-primary" id="camBtn" disabled>📷 Gunakan webcam</button>
-        <label class="btn" id="fileLbl" aria-disabled="true">📁 Pilih video atau foto<input type="file" id="fileIn" accept="video/*,image/*" hidden disabled></label>
+        <button class="btn" id="fileBtn" disabled>📁 Pilih video atau foto</button>
+        <input type="file" id="fileIn" accept="video/*,image/*" hidden aria-hidden="true" tabindex="-1">
         <button class="btn" id="stopBtn" disabled>■ Berhenti</button>
         <span class="small muted" id="modelInfo">Memuat…</span>
       </div>
@@ -61,7 +65,7 @@
     </section>
     <aside class="stack">
       <section class="panel"><header><h3>1 · Hasil kamera (perangkat lokal)</h3></header><div class="body">
-        <div class="big-status st-idle" id="localStatus" role="status" aria-live="polite"><span class="ico">⏸</span><span>Belum berjalan<small>Pilih webcam atau file video/foto.</small></span></div>
+        <div class="big-status st-idle" id="localStatus"><span class="ico" id="localIco" aria-hidden="true">⏸</span><span><span id="localTitle" role="status" aria-live="polite">Belum berjalan</span><small id="localDetail">Pilih webcam atau file video/foto.</small></span></div>
         <ul class="persons" id="persons"></ul>
         <div class="small muted" id="sendInfo" style="margin-top:8px"></div>
       </div></section>
@@ -72,7 +76,7 @@
           <li>Hanya orang yang tubuhnya cukup berada di <b>area kerja (ROI)</b> mesin yang dihitung; orang lewat di luar area diabaikan.</li>
           <li>Status berubah hanya jika hasilnya sama pada 2 analisis berturut-turut, agar tidak mudah berganti-ganti.</li>
           <li>Server mencatat <b>ketidakhadiran</b> hanya jika tidak ada orang selama ≥ ambang (default 30 dtk), dan menutupnya setelah orang terkonfirmasi kembali.</li>
-          <li>Gambar gelap, tertutup, atau deteksi yang kurang yakin dicatat sebagai <b>pemantauan tidak tersedia</b>, bukan ketidakhadiran.</li>
+          <li>Kualitas gambar dinilai di area kerja (kecerahan, kontras, ketajaman). Gambar gelap, buram, area kerja yang tertutup bidang polos (mis. kain), atau deteksi yang kurang yakin dicatat sebagai <b>pemantauan tidak tersedia</b>, bukan ketidakhadiran.</li>
         </ol>
       </div></section>
     </aside>

@@ -68,7 +68,7 @@ Halaman <http://localhost:3000/kamera-demo.html?m=M01> (menu **Demo deteksi oran
 
 1. Klik **Gunakan webcam** lalu izinkan akses kamera, atau **Pilih video atau foto** (mis. rekaman CCTV area kerja).
 2. Kotak **hijau** = orang di area kerja mesin (dihitung hadir), **oranye** = orang di luar area (hanya lewat, tidak dihitung), **abu-abu** = deteksi kurang yakin. Area kerja (ROI) diatur di halaman **Kamera & area deteksi**.
-3. Panel kanan menunjukkan pencatatan server secara langsung. Ketidakhadiran baru dicatat setelah tidak ada orang ≥ 30 detik, lalu ditutup setelah orang terkonfirmasi kembali 5 detik. Gambar gelap/tertutup dicatat sebagai "pemantauan tidak tersedia", bukan ketidakhadiran.
+3. Panel kanan menunjukkan pencatatan server secara langsung. Ketidakhadiran baru dicatat setelah tidak ada orang ≥ 30 detik, lalu ditutup setelah orang terkonfirmasi kembali 5 detik. Kualitas gambar dinilai di area kerja (kecerahan, kontras, ketajaman): gambar gelap, buram, atau area kerja yang tertutup bidang polos (mis. kain) dicatat sebagai "pemantauan tidak tersedia", bukan ketidakhadiran. Benda bertekstur yang menghalangi area kerja tidak dapat dibedakan dari area kosong, jadi atur posisi kamera agar area kerja tidak mudah terhalang.
 
 Catatan:
 * Model hanya mengenali objek "orang" (tanpa pengenalan wajah). Video diproses di browser dan tidak dikirim/disimpan; yang dikirim hanya status, keyakinan, kualitas gambar, dan proporsi di area kerja.

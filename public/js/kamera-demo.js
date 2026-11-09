@@ -7,37 +7,43 @@ const params = new URLSearchParams(location.search);
 const machineId = (params.get('m') || 'M01').toUpperCase();
 const $ = (id) => document.getElementById(id);
 
-const DETECT_MIN_SCORE = 0.3; // kandidat terendah yang dianalisis (di bawah keyakinan minimum = "kurang yakin")
+const DETECT_MIN_SCORE = 0.3; // batas atas skor kandidat terendah yang dianalisis ("kurang yakin" = di bawah keyakinan minimum)
 const STABLE_N = 2;           // status baru berlaku setelah sama pada 2 analisis berturut-turut
 const KEEPALIVE_MS = 10000;   // status yang sama dikirim ulang berkala (seperti perangkat lokal)
-const MIN_INTERVAL_MS = 450;  // ±2 analisis per detik
+const MIN_INTERVAL_MS = 450;  // ±2 analisis per detik (dengan akselerasi WebGL)
 const MAX_CANVAS_W = 1280;
+const QW = 160;               // lebar sampel untuk menilai kualitas gambar area kerja
+const FULL_ROI = [[0, 0], [1, 0], [1, 1], [0, 1]];
+// Dipakai bila parameter mesin tidak dapat dimuat (mis. mode produksi tanpa login): analisis tetap tampil lokal
+const DEFAULT_CAM = { roi: FULL_ROI, min_confidence: 0.6, min_quality: 0.5, min_roi_overlap: 0.3, absence_threshold_s: 30, return_confirm_s: 5, enabled: true };
 
 const STATES = {
   PRESENT: { cls: 'st-present', ico: '👤', title: 'Orang terdeteksi di area kerja', key: 'present' },
   OUTSIDE: { cls: 'st-outside', ico: '🚶', title: 'Orang terlihat di luar area kerja — tidak dihitung', key: 'absent' },
   EMPTY: { cls: 'st-empty', ico: '∅', title: 'Tidak ada orang di area kerja', key: 'absent' },
   UNCERTAIN: { cls: 'st-uncertain', ico: '❔', title: 'Deteksi kurang yakin', key: 'unreliable' },
-  UNRELIABLE: { cls: 'st-unreliable', ico: '⚠', title: 'Gambar tidak andal (gelap / tertutup / buram)', key: 'unreliable' },
+  UNRELIABLE: { cls: 'st-unreliable', ico: '⚠', title: 'Gambar area kerja tidak andal (gelap / buram / tertutup)', key: 'unreliable' },
 };
 const KEY_LABEL = { present: 'ada orang di area kerja', absent: 'tidak ada orang di area kerja', unreliable: 'deteksi tidak andal' };
 const OUTCOME_LABEL = { PRESENT: 'Hadir', ABSENT: 'Tidak ada orang', UNRELIABLE: 'Tidak andal → pemantauan tidak tersedia', queued: 'disimpan di antrean lokal (jaringan terputus)' };
 const COLORS = { in: '#22a559', out: '#f59e0b', weak: '#94a3b8' };
 const pct = (v) => (v == null ? '—' : `${Math.round(v * 100)}%`);
-// Keyakinan dibulatkan ke bawah agar mis. 59,8% tidak tampil "60%" padahal di bawah minimum 60%
+// Keyakinan dibulatkan ke BAWAH untuk tampilan, agar mis. 59,8% tidak tampil "60%" padahal di bawah minimum 60%
 const pctScore = (v) => (v == null ? '—' : `${Math.floor(v * 100)}%`);
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 const st = {
   info: null, term: null, cam: null, model: null, backend: '', modelSource: '',
-  source: null, loopToken: 0, lastDet: null, inferMs: 0,
-  candidate: null, candCount: 0, committed: null, committedObs: null, lastSent: null, sending: false,
-  originalAutoPresence: null, // keberadaan acak simulasi sebelum demo dimulai (dipulihkan saat berhenti)
+  source: null, loopToken: 0, startToken: 0, lastDet: null, inferMs: 0,
+  candidate: null, candCount: 0, committed: null, committedObs: null,
+  lastSent: null, sending: false, sendPromise: null, sentAny: false, lastServerHtml: '',
 };
 const view = $('view');
 const vctx = view.getContext('2d');
 const qc = document.createElement('canvas');
-qc.width = 64; qc.height = 48;
+qc.width = QW; qc.height = 120;
 const qctx = qc.getContext('2d', { willReadFrequently: true });
+const camParams = () => st.cam || DEFAULT_CAM;
 
 // ---------------- Inisialisasi ----------------
 async function init() {
@@ -52,9 +58,7 @@ async function init() {
   setInterval(refreshServer, 1000);
   try {
     await loadModel();
-    $('camBtn').disabled = false;
-    $('fileIn').disabled = false;
-    $('fileLbl').removeAttribute('aria-disabled');
+    setBusy(false);
   } catch (e) {
     console.error(e);
     $('placeholder').innerHTML = `<b>Model deteksi gagal dimuat.</b><br>${esc(e.message)}<br><br>Pastikan browser terhubung ke internet, atau jalankan <code>npm run unduh-model</code> di komputer server agar model tersedia secara lokal.`;
@@ -105,25 +109,35 @@ async function loadModel() {
 
 // ---------------- Panel server ----------------
 async function refreshServer() {
+  let html;
   try {
     const d = await api(`/terminal/${encodeURIComponent(machineId)}`);
     st.term = d;
     st.cam = d.camera;
-    renderServer(d);
+    html = serverHtml(d);
+    $('srvTime').textContent = `diperbarui ${fmtT(d.now)}`;
   } catch (e) {
-    $('server').innerHTML = e.status === 401
-      ? '<div class="notice warn">Mode produksi: <a href="/">login sebagai admin/supervisor</a> terlebih dahulu untuk melihat data mesin.</div>'
-      : `<div class="notice bad">Data mesin tidak dapat dimuat: ${esc(e.message)}</div>`;
+    html = e.status === 401
+      ? '<div class="notice warn">Mode produksi: <a href="/">login sebagai admin/supervisor</a> terlebih dahulu untuk melihat data mesin. Analisis kamera tetap ditampilkan dengan parameter bawaan.</div>'
+      : e.status === 403 ? `<div class="notice bad">${esc(e.message)}</div>`
+        : `<div class="notice bad">Data mesin tidak dapat dimuat: ${esc(e.message)}</div>`;
   }
+  // Hanya ditulis ulang bila berubah, agar fokus keyboard pada tautan di panel tidak hilang
+  if (html !== st.lastServerHtml) { $('server').innerHTML = html; st.lastServerHtml = html; }
 }
 
 function eventLabel(e) {
-  if (e.kind === 'MONITORING_UNAVAILABLE') return badge('muted', 'Pemantauan tidak tersedia');
-  const cls = e.corrected_classification || e.classification;
-  return cls === 'BREAK' ? badge('info', 'Istirahat terjadwal') : cls === 'LEAVE' ? badge('info', 'Izin') : badge('bad', 'Tidak terdeteksi');
+  const corr = e.corrected_classification;
+  const tag = corr ? ' (dikoreksi)' : '';
+  if (corr === 'PRESENT') return badge('ok', 'Hadir (dikoreksi)');
+  if (corr === 'UNKNOWN' || (!corr && e.kind === 'MONITORING_UNAVAILABLE')) return badge('muted', `Pemantauan tidak tersedia${tag}`);
+  const cls = corr || e.classification;
+  if (cls === 'BREAK') return badge('info', `Istirahat terjadwal${tag}`);
+  if (cls === 'LEAVE') return badge('info', `Izin${tag}`);
+  return badge('bad', `Tidak terdeteksi${tag}`);
 }
 
-function renderServer(d) {
+function serverHtml(d) {
   const c = d.card, s = c.session, cam = d.camera, p = c.presence;
   const [tone] = STATUS.presence[p.code] || ['muted'];
   let h = '';
@@ -135,83 +149,116 @@ function renderServer(d) {
   h += `<div style="margin-top:8px">Status keberadaan: ${badge(tone, p.label)} ${p.ongoing_ms != null ? `<b>${fmtDur(p.ongoing_ms)}</b>` : ''}</div>`;
   if (p.code === 'CHECKING' && cam) {
     const pctv = Math.min(100, (p.ongoing_ms / (cam.absence_threshold_s * 1000)) * 100);
-    h += `<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pctv)}"><div style="width:${pctv}%"></div></div>
+    h += `<div class="meter" role="progressbar" aria-label="Menuju ambang ketidakhadiran" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pctv)}"><div style="width:${pctv}%"></div></div>
       <div class="small muted">Dicatat sebagai ketidakhadiran bila mencapai ${cam.absence_threshold_s} dtk tanpa orang. Jika orang kembali sebelum itu, tidak dicatat.</div>`;
   }
   if (p.code === 'ABSENT') h += `<div class="small" style="margin-top:4px">${p.returning ? `Orang terlihat kembali — menunggu konfirmasi ${cam?.return_confirm_s ?? 5} dtk sebelum kejadian ditutup.` : 'Kejadian ketidakhadiran sedang berlangsung (waktu mulai = saat orang pertama kali tidak terdeteksi).'}</div>`;
   if (s) h += `<div class="small" style="margin-top:8px">Total tidak terdeteksi sesi ini: <b>${fmtDur(s.absent_total_ms)}</b> (${s.absence_count} kejadian) · Pemantauan tidak tersedia: <b>${fmtDur(s.unknown_ms)}</b></div>`;
   if (d.presence_events?.length) {
-    h += `<table class="tbl" style="margin-top:8px"><thead><tr><th>Kejadian</th><th>Mulai</th><th>Selesai</th><th class="num">Durasi</th></tr></thead><tbody>${d.presence_events.map((e) => `<tr><td>${eventLabel(e)}</td><td>${fmtT(e.start_at)}</td><td>${e.end_at ? fmtT(e.end_at) : '<i>berlangsung</i>'}</td><td class="num">${fmtDur(e.end_at ? e.duration_ms : d.now - e.start_at)}</td></tr>`).join('')}</tbody></table>`;
+    h += `<div class="tbl-scroll"><table class="tbl" style="margin-top:8px"><thead><tr><th>Kejadian</th><th>Mulai</th><th>Selesai</th><th class="num">Durasi</th></tr></thead><tbody>${d.presence_events.map((e) => `<tr><td>${eventLabel(e)}</td><td>${fmtT(e.start_at)}</td><td>${e.end_at ? fmtT(e.end_at) : '<i>berlangsung</i>'}</td><td class="num">${fmtDur(e.end_at ? e.duration_ms : d.now - e.start_at)}</td></tr>`).join('')}</tbody></table></div>`;
   } else if (s) {
     h += '<div class="small muted" style="margin-top:6px">Belum ada kejadian tercatat pada sesi ini.</div>';
   }
   if (cam) h += `<div class="small muted" style="margin-top:8px">Parameter ${esc(machineId)}: ambang ketidakhadiran ${cam.absence_threshold_s} dtk · konfirmasi kembali ${cam.return_confirm_s} dtk · keyakinan minimum ${pct(cam.min_confidence)} · kualitas minimum ${pct(cam.min_quality)} · minimal ${pct(cam.min_roi_overlap)} tubuh di area kerja${cam.enabled ? '' : ' · <b>kamera dinonaktifkan di konfigurasi</b>'}</div>`;
-  $('server').innerHTML = h;
-  $('srvTime').textContent = `diperbarui ${fmtT(d.now)}`;
+  return h;
+}
+
+// ---------------- Status lokal ----------------
+/** Judul status berada di live region dan hanya diubah bila berbeda (tidak diumumkan terus-menerus). */
+function setStatus(cls, ico, title, detail) {
+  $('localStatus').className = `big-status ${cls}`;
+  $('localIco').textContent = ico;
+  if ($('localTitle').textContent !== title) $('localTitle').textContent = title;
+  $('localDetail').textContent = detail;
+}
+function showError(msg) { setStatus('st-unreliable', '⚠', msg, ''); }
+
+function setBusy(busy) {
+  const noModel = !st.model;
+  $('camBtn').disabled = busy || noModel;
+  $('fileBtn').disabled = busy || noModel;
+  $('stopBtn').disabled = !busy && !st.source;
 }
 
 // ---------------- Sumber gambar ----------------
-function showError(msg) {
-  $('localStatus').className = 'big-status st-unreliable';
-  $('localStatus').innerHTML = `<span class="ico">⚠</span><span>${esc(msg)}</span>`;
-}
-
 async function startWebcam() {
   if (!navigator.mediaDevices?.getUserMedia) {
     showError('Webcam hanya dapat dipakai lewat http://localhost atau https://. Buka halaman ini di komputer yang menjalankan server, atau gunakan file video/foto.');
     return;
   }
+  const token = ++st.startToken;
   stopSource(false);
+  setBusy(true);
+  let stream = null;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    if (token !== st.startToken) { stream.getTracks().forEach((t) => t.stop()); return; } // dibatalkan/digantikan
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.srcObject = stream;
     await v.play();
+    if (token !== st.startToken) { stream.getTracks().forEach((t) => t.stop()); return; }
     startSource({ kind: 'webcam', el: v, stream, label: 'Webcam' });
   } catch (e) {
-    showError(e.name === 'NotAllowedError' ? 'Izin kamera ditolak. Izinkan akses kamera untuk situs ini di pengaturan browser.'
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    if (token !== st.startToken) return;
+    failStart(e.name === 'NotAllowedError' ? 'Izin kamera ditolak. Izinkan akses kamera untuk situs ini di pengaturan browser.'
       : e.name === 'NotFoundError' ? 'Tidak ada kamera yang terdeteksi di perangkat ini.' : `Webcam tidak dapat dibuka: ${e.message}`);
+  } finally {
+    if (token === st.startToken) setBusy(false);
   }
 }
 
 async function startFile(file) {
+  const token = ++st.startToken;
   stopSource(false);
+  setBusy(true);
   const url = URL.createObjectURL(file);
   try {
+    let src;
     if (file.type.startsWith('image/')) {
       const img = new Image();
       img.src = url;
       await img.decode();
-      startSource({ kind: 'image', el: img, url, label: file.name });
+      src = { kind: 'image', el: img, url, label: file.name };
     } else if (file.type.startsWith('video/')) {
       const v = document.createElement('video');
       v.muted = true; v.loop = true; v.playsInline = true; v.src = url;
       await new Promise((resolve, reject) => { v.onloadeddata = resolve; v.onerror = () => reject(new Error('format video tidak didukung browser ini (gunakan MP4 atau WebM)')); });
       await v.play();
-      startSource({ kind: 'video', el: v, url, label: file.name });
+      src = { kind: 'video', el: v, url, label: file.name };
     } else {
       throw new Error('pilih file video atau gambar');
     }
+    if (token !== st.startToken) { if (src.kind === 'video') src.el.pause(); URL.revokeObjectURL(url); return; }
+    startSource(src);
   } catch (e) {
     URL.revokeObjectURL(url);
-    showError(`File tidak dapat dibuka: ${e.message}`);
+    if (token !== st.startToken) return;
+    failStart(`File tidak dapat dibuka: ${e.message}`);
+  } finally {
+    if (token === st.startToken) setBusy(false);
   }
+}
+
+/** Sumber gagal dibuka: hentikan demo sepenuhnya (keadaan simulasi mesin dipulihkan bila sudah sempat dikirimi data). */
+function failStart(msg) {
+  stopSource(true);
+  showError(msg);
 }
 
 function startSource(src) {
   st.source = src;
   st.lastDet = null; st.candidate = null; st.candCount = 0; st.committed = null; st.committedObs = null; st.lastSent = null;
-  if (st.originalAutoPresence == null && st.term?.sim) st.originalAutoPresence = !!st.term.sim.auto_presence;
   $('placeholder').hidden = true;
   view.hidden = false;
-  $('stopBtn').disabled = false;
   const token = ++st.loopToken;
+  setBusy(false);
   requestAnimationFrame(() => render(token));
   detectLoop(token);
 }
 
-/** Menghentikan sumber. restoreSim: kembalikan keberadaan acak simulasi seperti sebelum demo. */
-function stopSource(restoreSim = true) {
+/** Menghentikan sumber. end=true: demo selesai → kondisi kamera simulasi mesin dikembalikan seperti sebelum demo. */
+function stopSource(end = true, { immediate = false } = {}) {
   st.loopToken++;
   const s = st.source;
   if (s) {
@@ -221,20 +268,21 @@ function stopSource(restoreSim = true) {
   }
   st.source = null;
   $('stopBtn').disabled = true;
-  if (restoreSim) {
-    restoreSimulation();
-    $('localStatus').className = 'big-status st-idle';
-    $('localStatus').innerHTML = `<span class="ico">⏸</span><span>Dihentikan<small>${st.info?.simulation ? 'Keberadaan mesin kembali dikendalikan simulasi seperti sebelum demo.' : 'Analisis berhenti.'}</small></span>`;
+  if (end) {
+    endDemo(immediate);
+    setStatus('st-idle', '⏸', 'Dihentikan', st.info?.simulation ? 'Kondisi kamera simulasi mesin dikembalikan seperti sebelum demo.' : 'Analisis berhenti.');
     $('persons').innerHTML = '';
   }
 }
 
-function restoreSimulation() {
-  if (!st.info?.simulation || st.originalAutoPresence == null) return;
-  // keepalive: permintaan tetap terkirim walau halaman sedang ditutup
-  fetch(`/api/sim/${encodeURIComponent(machineId)}/auto_presence`, {
-    method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: st.originalAutoPresence }),
+function endDemo(immediate) {
+  if (!st.info?.simulation || !st.sentAny) return;
+  st.sentAny = false;
+  const fire = () => fetch(`/api/sim/${encodeURIComponent(machineId)}/camera_demo_end`, {
+    method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: '{}',
   }).catch(() => {});
+  // Tunggu kiriman yang sedang berjalan agar tidak tiba setelah pemulihan (kecuali halaman sedang ditutup)
+  if (immediate || !st.sendPromise) fire(); else st.sendPromise.finally(fire);
 }
 
 // ---------------- Analisis ----------------
@@ -252,43 +300,97 @@ function roiOverlap(x, y, w, h, poly) {
   for (let i = 0; i < g; i++) for (let j = 0; j < g; j++) if (inPoly(x + ((i + 0.5) * w) / g, y + ((j + 0.5) * h) / g, poly)) k++;
   return k / (g * g);
 }
-/** Kualitas gambar 0..1 dari kontras & kecerahan (gambar gelap, tertutup, atau silau → rendah). */
-function frameQuality(el) {
-  qctx.drawImage(el, 0, 0, qc.width, qc.height);
-  const d = qctx.getImageData(0, 0, qc.width, qc.height).data;
-  let sum = 0, sum2 = 0;
-  const n = d.length / 4;
-  for (let i = 0; i < d.length; i += 4) { const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; sum += l; sum2 += l * l; }
-  const mean = sum / n, std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
-  let q = Math.min(1, std / 24);
-  if (mean < 30) q *= mean / 30;
-  if (mean > 230) q *= Math.max(0, 255 - mean) / 25;
-  return Math.round(Math.max(0, Math.min(1, q)) * 100) / 100;
-}
 const dims = (el) => [el.videoWidth || el.naturalWidth || el.width, el.videoHeight || el.naturalHeight || el.height];
 
-function analyze(preds, el) {
-  const cam = st.cam;
+let maskCache = { key: '', mask: null };
+/** Topeng piksel sampel (QW×qh) yang pusatnya berada di dalam poligon ROI; di-cache per ROI & ukuran. */
+function roiMask(roi, bx, by, bw, bh, qh) {
+  const key = `${JSON.stringify(roi)}|${bx.toFixed(4)}|${by.toFixed(4)}|${bw.toFixed(4)}|${bh.toFixed(4)}|${qh}`;
+  if (maskCache.key === key) return maskCache.mask;
+  const mask = new Uint8Array(QW * qh);
+  let inside = 0;
+  for (let y = 0; y < qh; y++) {
+    for (let x = 0; x < QW; x++) {
+      if (inPoly(bx + ((x + 0.5) / QW) * bw, by + ((y + 0.5) / qh) * bh, roi)) { mask[y * QW + x] = 1; inside++; }
+    }
+  }
+  if (inside < 64) mask.fill(1); // poligon terlalu kecil → nilai seluruh kotak pembatas
+  maskCache = { key, mask };
+  return mask;
+}
+
+/**
+ * Kualitas gambar 0..1, dinilai pada piksel di dalam poligon AREA KERJA (bukan seluruh frame), sehingga area kerja
+ * yang tertutup tetap terdeteksi walau sisa gambar normal. Nilai = komponen terendah dari:
+ * kecerahan (gelap/silau), kontras, dan detail tepi relatif terhadap kontras (buram atau tertutup bidang polos).
+ */
+function frameQuality(el, roi) {
   const [w, h] = dims(el);
-  const roi = cam.roi && cam.roi.length >= 3 ? cam.roi : [[0, 0], [1, 0], [1, 1], [0, 1]];
+  const xs = roi.map((p) => p[0]), ys = roi.map((p) => p[1]);
+  const x0 = clamp01(Math.min(...xs)), x1 = clamp01(Math.max(...xs)), y0 = clamp01(Math.min(...ys)), y1 = clamp01(Math.max(...ys));
+  let sx = x0 * w, sy = y0 * h, sw = (x1 - x0) * w, sh = (y1 - y0) * h;
+  if (sw < 8 || sh < 8) { sx = 0; sy = 0; sw = w; sh = h; }
+  const qh = Math.max(8, Math.min(240, Math.round((QW * sh) / sw)));
+  if (qc.height !== qh) qc.height = qh;
+  qctx.imageSmoothingEnabled = true;
+  qctx.imageSmoothingQuality = 'medium';
+  qctx.drawImage(el, sx, sy, sw, sh, 0, 0, QW, qh);
+  const d = qctx.getImageData(0, 0, QW, qh).data;
+  const n = QW * qh;
+  // Hanya piksel di DALAM poligon area kerja yang dinilai (sudut kotak pembatas di luar poligon diabaikan)
+  const mask = roiMask(roi, sx / w, sy / h, sw / w, sh / h, qh);
+  const L = new Float32Array(n);
+  let sum = 0, sum2 = 0, cnt = 0;
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    const l = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+    L[i] = l;
+    if (mask[i]) { sum += l; sum2 += l * l; cnt++; }
+  }
+  const mean = sum / cnt, std = Math.sqrt(Math.max(0, sum2 / cnt - mean * mean));
+  let gsum = 0, gcnt = 0;
+  for (let y = 0; y < qh; y++) {
+    for (let x = 0; x < QW; x++) {
+      const i = y * QW + x;
+      if (!mask[i]) continue;
+      if (x + 1 < QW && mask[i + 1]) { gsum += Math.abs(L[i + 1] - L[i]); gcnt++; }
+      if (y + 1 < qh && mask[i + QW]) { gsum += Math.abs(L[i + QW] - L[i]); gcnt++; }
+    }
+  }
+  const grad = gcnt ? gsum / gcnt : 0;
+  const parts = [
+    ['terlalu gelap', mean < 30 ? mean / 30 : 1],
+    ['terlalu terang/silau', mean > 230 ? Math.max(0, 255 - mean) / 25 : 1],
+    ['kontras rendah', Math.min(1, std / 24)],
+    ['buram atau tertutup', clamp01((grad / (std + 4) - 0.03) / 0.03)],
+  ];
+  const worst = parts.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const q = Math.round(worst[1] * 100) / 100;
+  return { q, reason: q < 1 ? worst[0] : '' };
+}
+
+function analyze(preds, el) {
+  const cam = camParams();
+  const [w, h] = dims(el);
+  const roi = cam.roi && cam.roi.length >= 3 ? cam.roi : FULL_ROI;
   const persons = preds.filter((p) => p.class === 'person').map((p) => {
     const [x, y, bw, bh] = p.bbox;
     const overlap = roiOverlap(x / w, y / h, bw / w, bh / h, roi);
     return { score: p.score, bbox: p.bbox, overlap, confident: p.score >= cam.min_confidence, inRoi: overlap >= cam.min_roi_overlap };
   }).sort((a, b) => b.score - a.score);
-  const quality = frameQuality(el);
+  const { q: quality, reason } = frameQuality(el, roi);
   const inC = persons.filter((p) => p.confident && p.inRoi);
   const inU = persons.filter((p) => !p.confident && p.inRoi);
   const outC = persons.filter((p) => p.confident && !p.inRoi);
   const max = (arr, k) => Math.max(...arr.map((p) => p[k]));
+  // Skor & proporsi dikirim TANPA pembulatan, sehingga server membuat keputusan yang sama dengan halaman ini
+  // (mis. skor 0,598 tetap "kurang yakin" di server, tidak terbulatkan menjadi 0,60 = yakin).
   let state, obs;
   if (quality < cam.min_quality) { state = 'UNRELIABLE'; obs = { present: false, confidence: null, quality, roi_overlap: null }; }
   else if (inC.length) { state = 'PRESENT'; obs = { present: true, confidence: max(inC, 'score'), quality, roi_overlap: max(inC, 'overlap') }; }
   else if (inU.length) { state = 'UNCERTAIN'; obs = { present: false, confidence: inU[0].score, quality, roi_overlap: inU[0].overlap }; }
   else if (outC.length) { state = 'OUTSIDE'; obs = { present: true, confidence: outC[0].score, quality, roi_overlap: max(outC, 'overlap') }; }
   else { state = 'EMPTY'; obs = { present: false, confidence: null, quality, roi_overlap: null }; }
-  for (const k of ['confidence', 'roi_overlap']) if (obs[k] != null) obs[k] = Math.round(obs[k] * 100) / 100;
-  return { persons, quality, state, obs, counts: { inC: inC.length, inU: inU.length, outC: outC.length } };
+  return { persons, quality, qualityReason: reason, state, obs, counts: { inC: inC.length, inU: inU.length, outC: outC.length } };
 }
 
 async function detectLoop(token) {
@@ -296,9 +398,10 @@ async function detectLoop(token) {
     const t0 = performance.now();
     const src = st.source;
     const ready = src && (src.kind === 'image' || src.el.readyState >= 2) && dims(src.el)[0] > 0;
-    if (ready && st.cam && st.model) {
+    if (ready && st.model) {
       try {
-        const preds = await st.model.detect(src.el, 20, DETECT_MIN_SCORE);
+        const minScore = Math.min(DETECT_MIN_SCORE, camParams().min_confidence * 0.5);
+        const preds = await st.model.detect(src.el, 20, minScore);
         if (token !== st.loopToken) return;
         st.inferMs = Math.round(performance.now() - t0);
         const res = analyze(preds, src.el);
@@ -325,21 +428,23 @@ function onResult(res) {
 }
 
 function maybeSend() {
-  if (!st.committed || st.sending) return;
+  if (!st.committed || st.sending || !st.source) return;
   const key = STATES[st.committed].key;
   const changed = !st.lastSent || st.lastSent.key !== key;
   if (!changed && Date.now() - st.lastSent.at < KEEPALIVE_MS) return;
-  send(st.committedObs, key);
+  st.sendPromise = send(st.committedObs, key);
 }
 
 async function send(obs, key) {
-  if (!st.info?.simulation) { st.lastSent = { key, at: Date.now(), outcome: 'tidak dikirim (mode produksi)' }; renderSendInfo(); return; }
+  if (!st.info?.simulation) { st.lastSent = { key, at: Date.now(), outcome: null }; renderSendInfo(); return; }
   st.sending = true;
+  const token = st.loopToken;
   try {
     const r = await api(`/sim/${encodeURIComponent(machineId)}/camera_frame`, { method: 'POST', body: obs });
-    st.lastSent = { key, at: Date.now(), outcome: OUTCOME_LABEL[r.outcome] || OUTCOME_LABEL[r.status] || r.outcome || r.status };
+    st.sentAny = true;
+    if (token === st.loopToken) st.lastSent = { key, at: Date.now(), outcome: OUTCOME_LABEL[r.outcome] || OUTCOME_LABEL[r.status] || r.outcome || r.status };
   } catch (e) {
-    st.lastSent = { key: null, at: Date.now(), outcome: `gagal: ${e.message}` };
+    if (token === st.loopToken) st.lastSent = { key: null, at: Date.now(), outcome: `gagal: ${e.message}` };
   } finally {
     st.sending = false;
     renderSendInfo();
@@ -349,6 +454,7 @@ async function send(obs, key) {
 // ---------------- Tampilan ----------------
 function renderSendInfo() {
   const s = st.lastSent;
+  if (!st.info?.simulation) { $('sendInfo').textContent = 'Mode produksi: hasil hanya ditampilkan di halaman ini dan tidak dikirim ke server.'; return; }
   $('sendInfo').innerHTML = s ? `Terakhir dikirim ke server ${fmtT(s.at)}: <b>${esc(KEY_LABEL[s.key] || '—')}</b> → ${esc(s.outcome)}` : '';
 }
 
@@ -356,23 +462,23 @@ function renderLocal(res) {
   const shown = st.committed || res.state;
   const S = STATES[shown];
   const o = shown === res.state ? res.obs : st.committedObs || res.obs;
-  const cam = st.cam;
+  const cam = camParams();
+  const qInfo = shown === res.state ? res.qualityReason : '';
   const detail = {
     PRESENT: `Keyakinan ${pctScore(o.confidence)} · ${pct(o.roi_overlap)} tubuh di dalam area kerja`,
     OUTSIDE: `${res.counts.outC} orang terlihat, tetapi di luar area kerja mesin (hanya lewat)`,
     EMPTY: 'Tidak ada orang di dalam area kerja mesin',
-    UNCERTAIN: `Kandidat orang dengan keyakinan ${pctScore(o.confidence)} < minimum ${pct(cam.min_confidence)} → dicatat sebagai pemantauan tidak tersedia`,
-    UNRELIABLE: `Kualitas gambar ${pct(o.quality)} < minimum ${pct(cam.min_quality)} → bukan ketidakhadiran`,
+    UNCERTAIN: `Kandidat orang dengan keyakinan ${pctScore(o.confidence)} di bawah minimum ${pct(cam.min_confidence)} → dicatat sebagai pemantauan tidak tersedia`,
+    UNRELIABLE: `Kualitas gambar area kerja ${pct(o.quality)}${qInfo ? ` (${qInfo})` : ''} di bawah minimum ${pct(cam.min_quality)} → bukan ketidakhadiran`,
   }[shown];
   const pending = st.candidate && st.candidate !== shown ? ` · berubah ke "${STATES[st.candidate].title}"…` : '';
-  $('localStatus').className = `big-status ${S.cls}`;
-  $('localStatus').innerHTML = `<span class="ico" aria-hidden="true">${S.ico}</span><span>${esc(S.title)}<small>${esc(detail + pending)}</small></span>`;
+  setStatus(S.cls, S.ico, S.title, detail + pending);
   $('persons').innerHTML = res.persons.slice(0, 8).map((p, i) => {
     const col = p.confident ? (p.inRoi ? COLORS.in : COLORS.out) : COLORS.weak;
     const where = p.inRoi ? 'di area kerja' : 'di luar area';
-    return `<li><span class="sw" style="background:${col}"></span>Orang ${i + 1}: keyakinan ${pctScore(p.score)} · ${pct(p.overlap)} di area → ${p.confident ? where : 'kurang yakin'}</li>`;
+    return `<li><span class="sw" style="background:${col}" aria-hidden="true"></span>Orang ${i + 1}: keyakinan ${pctScore(p.score)} · ${pct(p.overlap)} di area → ${p.confident ? where : 'kurang yakin'}</li>`;
   }).join('') || '<li class="muted">Tidak ada objek "orang" terdeteksi.</li>';
-  $('modelInfo').textContent = `Backend ${st.backend} · analisis ${st.inferMs} ms · kualitas gambar ${pct(res.quality)} · sumber model ${st.modelSource}`;
+  $('modelInfo').textContent = `Backend ${st.backend} · analisis ${st.inferMs} ms · kualitas gambar area kerja ${pct(res.quality)}${res.qualityReason ? ` (${res.qualityReason})` : ''} · sumber model ${st.modelSource}`;
   renderSendInfo();
 }
 
@@ -420,7 +526,9 @@ function label(text, x, y, bg, u) {
 
 // ---------------- Kontrol ----------------
 $('camBtn').onclick = startWebcam;
+$('fileBtn').onclick = () => $('fileIn').click();
 $('fileIn').onchange = (e) => { const f = e.target.files?.[0]; if (f) startFile(f); e.target.value = ''; };
-$('stopBtn').onclick = () => stopSource(true);
-window.addEventListener('pagehide', () => { if (st.source) stopSource(true); });
+// Berhenti juga membatalkan permintaan webcam/file yang masih menunggu (mis. dialog izin kamera)
+$('stopBtn').onclick = () => { st.startToken++; stopSource(true); setBusy(false); };
+window.addEventListener('pagehide', () => { st.startToken++; if (st.source || st.sentAny) stopSource(true, { immediate: true }); });
 init();
