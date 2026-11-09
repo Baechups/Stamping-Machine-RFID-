@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminal Operator</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { background: #0d1522; color: #e8eef7; }
+    .term { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr auto; }
+    .t-top { display: flex; align-items: center; gap: 14px; padding: 12px 20px; background: #111d30; border-bottom: 1px solid #22324d; flex-wrap: wrap; }
+    .t-top .mno { font-size: 30px; font-weight: 800; letter-spacing: .02em; }
+    .t-top .clock { font-size: 26px; font-variant-numeric: tabular-nums; margin-left: auto; }
+    .t-devs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .t-msg { margin: 14px 20px 0; padding: 16px 20px; border-radius: 12px; font-size: 22px; font-weight: 600; border: 2px solid; }
+    .t-msg.success { background: #0f3a24; border-color: #2ea56a; color: #d1fadf; } .t-msg.error { background: #4a1410; border-color: #e5484d; color: #ffe0dc; }
+    .t-msg.warning { background: #4a3206; border-color: #f5a524; color: #ffefc7; } .t-msg.pending, .t-msg.info { background: #12305c; border-color: #4d8df7; color: #dbe8ff; }
+    .t-body { padding: 16px 20px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-content: start; }
+    .t-card { background: #142139; border: 1px solid #263a5c; border-radius: 14px; padding: 18px; }
+    .t-card h2 { font-size: 15px; color: #9fb3d1; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+    .who { display: flex; gap: 18px; align-items: center; }
+    .who .ph { width: 110px; height: 110px; border-radius: 16px; background: #1e3256; display: grid; place-items: center; font-size: 56px; overflow: hidden; flex: none; }
+    .who .ph img { width: 100%; height: 100%; object-fit: cover; }
+    .who .nm { font-size: 34px; font-weight: 800; line-height: 1.1; } .who .id { font-size: 18px; color: #a9bad3; margin-top: 4px; }
+    .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+    .fact { background: #0f1a2e; border-radius: 10px; padding: 10px 12px; } .fact .l { color: #8ea3c2; font-size: 13px; } .fact .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .counter { font-size: 72px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+    .idle { text-align: center; padding: 50px 20px; } .idle .big { font-size: 40px; font-weight: 800; } .idle .rf { font-size: 90px; margin-bottom: 10px; }
+    .t-foot { padding: 10px 20px; background: #0a111c; color: #9fb3d1; font-size: 13px; display: grid; gap: 6px; }
+    .t-foot .safety { color: #ffd38a; font-weight: 700; font-size: 15px; }
+    .t-btn { font-size: 18px; padding: 12px 18px; border-radius: 10px; border: 1px solid #3a5583; background: #1d3359; color: #fff; cursor: pointer; font-weight: 600; }
+    .t-btn:hover { background: #26427a; } .t-btn.primary { background: #1d5fd1; border-color: #1d5fd1; }
+    .t-body select { font-size: 17px; padding: 10px; background: #0f1a2e; color: #fff; border: 1px solid #3a5583; border-radius: 8px; width: 100%; }
+    .badge { font-size: 14px; padding: 4px 12px; }
+    .sim-wrap { padding: 0 20px 20px; color: var(--ink); }
+    .sim-wrap details { background: #fff; border-radius: 12px; } .sim-wrap summary { padding: 12px 16px; cursor: pointer; font-weight: 700; color: #4c1d95; background: #f1eafe; border-radius: 12px; }
+    .t-sim-tag { background: #7c3aed; color: #fff; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 13px; }
+    @media (max-width: 900px) { .t-body { grid-template-columns: 1fr; } .who .nm { font-size: 26px; } .counter { font-size: 56px; } .t-msg { font-size: 18px; } .t-top .clock { font-size: 20px; } }
+  </style>
+</head>
+<body>
+  <div class="term" id="term"><div class="idle">Memuat terminal…</div></div>
+  <div class="sim-wrap" id="simWrap" hidden><details id="simDetails"><summary>🧪 Panel simulasi perangkat (tap kartu, kamera, PLC, jaringan)</summary><div id="simBox" style="padding:12px"></div></details></div>
+  <script type="module" src="/js/terminal.js"></script>
+</body>
+</html>
